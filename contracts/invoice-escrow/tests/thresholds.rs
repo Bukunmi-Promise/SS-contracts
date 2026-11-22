@@ -1,6 +1,6 @@
 //! Tests for per-invoice minimum/maximum funding thresholds:
 //! `create_invoice` thresholds, `invest` capacity cap, `release_to_issuer`
-//! gating, `get_funding_status`, and the one-shot `ThresholdReached` event.
+//! gating, `get_funding_status`, and `ThresholdReached` transition events.
 #![allow(deprecated, unused_variables, dead_code, unused_mut, clippy::all)]
 
 use soroban_sdk::testutils::{Address as _, Events};
@@ -197,6 +197,31 @@ fn test_threshold_reached_event_emitted_exactly_once() {
     assert_eq!(collect_threshold_events(&env).len(), 0);
     f.client.top_up(&first, &id, &10_000i128);
     assert_eq!(collect_threshold_events(&env).len(), 0);
+}
+
+#[test]
+fn test_threshold_marker_tracks_partial_refund_and_reinvestment() {
+    let env = Env::default();
+    let f = setup(&env);
+    let id = invoice_id(&env, 14);
+    let investor = Address::generate(&env);
+    mint(&env, &f.token, &investor, 500_000);
+    create_threshold_invoice(&env, &f, &id, 80_000, 50_000, 100_000);
+
+    f.client.invest(&id, &investor, &49_999i128);
+    assert!(!f.client.get_invoice(&id).threshold_reached);
+
+    // Equality at the minimum is ready.
+    f.client.invest(&id, &investor, &1i128);
+    assert!(f.client.get_invoice(&id).threshold_reached);
+
+    // A partial refund can move current backing below the minimum.
+    f.client.partial_refund(&investor, &id, &1i128);
+    assert!(!f.client.get_invoice(&id).threshold_reached);
+
+    // Crossing upward again restores readiness.
+    f.client.invest(&id, &investor, &1i128);
+    assert!(f.client.get_invoice(&id).threshold_reached);
 }
 
 #[test]

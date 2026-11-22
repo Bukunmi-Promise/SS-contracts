@@ -1715,7 +1715,8 @@ impl InvoiceEscrow {
     ///   capacity is accepted);
     /// * `release_to_issuer` only succeeds once the total raised has reached
     ///   `min_funding_threshold`;
-    /// * `ThresholdReached` is emitted the first time the minimum is crossed.
+    /// * `threshold_reached` reflects whether the current total has reached the
+    ///   minimum; `ThresholdReached` is emitted on each upward transition.
     ///
     /// Thresholds must satisfy `0 < min_funding_threshold <= funding_target <=
     /// max_funding_threshold`, so the target is always achievable within the cap.
@@ -1826,6 +1827,30 @@ impl InvoiceEscrow {
         Ok(())
     }
 
+    /// Keep the readiness marker in sync with the current amount raised.
+    /// Emit only on a false-to-true transition so repeated contributions while
+    /// already above the threshold stay quiet.
+    fn update_threshold_reached(
+        env: &Env,
+        invoice_id: &BytesN<32>,
+        invoice: &mut FundingInvoice,
+    ) {
+        let reached = invoice.total_raised >= invoice.min_funding_threshold;
+        if reached == invoice.threshold_reached {
+            return;
+        }
+
+        invoice.threshold_reached = reached;
+        if reached {
+            events::threshold_reached(
+                env,
+                invoice_id,
+                invoice.min_funding_threshold,
+                invoice.total_raised,
+            );
+        }
+    }
+
     /// Top up an existing investor position.
     /// Validates invoice is Open, caller has non-zero position, and cap not exceeded.
     pub fn top_up(
@@ -1871,15 +1896,7 @@ impl InvoiceEscrow {
         );
         storage::set_investor_position(&env, &invoice_id, &investor, new_total_position);
         invoice.total_raised = new_total_raised;
-        if !invoice.threshold_reached && new_total_raised >= invoice.min_funding_threshold {
-            invoice.threshold_reached = true;
-            events::threshold_reached(
-                &env,
-                &invoice_id,
-                invoice.min_funding_threshold,
-                new_total_raised,
-            );
-        }
+        Self::update_threshold_reached(&env, &invoice_id, &mut invoice);
         storage::set_invoice(&env, invoice_id.clone(), &invoice);
         events::investment_topped_up(
             &env,
@@ -2029,15 +2046,7 @@ impl InvoiceEscrow {
             token_client.transfer(&investor, env.current_contract_address(), &accepted);
             storage::set_investor_position(&env, &invoice_id, &investor, new_pos);
             invoice.total_raised = new_total;
-            if !invoice.threshold_reached && new_total >= invoice.min_funding_threshold {
-                invoice.threshold_reached = true;
-                events::threshold_reached(
-                    &env,
-                    &invoice_id,
-                    invoice.min_funding_threshold,
-                    new_total,
-                );
-            }
+            Self::update_threshold_reached(&env, &invoice_id, &mut invoice);
             storage::set_invoice(&env, invoice_id, &invoice);
             if accepted < amount {
                 events::partial_fill_executed(
@@ -2176,6 +2185,7 @@ impl InvoiceEscrow {
         token_client.transfer(&env.current_contract_address(), &investor, &amount);
         storage::set_investor_position(&env, &invoice_id, &investor, remaining);
         invoice.total_raised = new_total_raised;
+        Self::update_threshold_reached(&env, &invoice_id, &mut invoice);
         storage::set_invoice(&env, invoice_id.clone(), &invoice);
         events::investment_partially_refunded(&env, &investor, invoice_id, amount, remaining);
         Ok(())
