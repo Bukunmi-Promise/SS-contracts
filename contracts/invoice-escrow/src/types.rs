@@ -280,8 +280,8 @@ pub struct FundingInvoice {
     /// Maximum funding threshold: hard cap on `total_raised`. `invest` and
     /// `top_up` reject amounts that would push the total above it.
     pub max_funding_threshold: i128,
-    /// Whether `ThresholdReached` has already been emitted for this invoice.
-    /// Guarantees the event fires exactly once per invoice.
+    /// Whether the current total has reached the minimum funding threshold.
+    /// `ThresholdReached` is emitted when this changes from false to true.
     pub threshold_reached: bool,
 }
 
