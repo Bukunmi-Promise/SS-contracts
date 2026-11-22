@@ -12,7 +12,9 @@ mod events;
 mod storage;
 mod types;
 
-use soroban_sdk::{contract, contractimpl, Address, Env, IntoVal, String as SorobanString, Symbol, Vec};
+use soroban_sdk::{
+    contract, contractimpl, Address, Env, IntoVal, String as SorobanString, Symbol, Vec,
+};
 
 use crate::errors::Error;
 use crate::types::{is_zero_address, OwnershipHistoryRecord, TokenMetadata, MAX_DECIMALS};
@@ -44,6 +46,19 @@ where
         ensure_non_zero_address(env, core::borrow::Borrow::borrow(&address))?;
     }
     Ok(())
+}
+
+fn require_role_auth(env: &Env, role: &str, account: &Address) -> Result<(), Error> {
+    account.require_auth();
+    let role = Symbol::new(env, role);
+    if !storage::has_role(env, &role, account) {
+        return Err(Error::Unauthorized);
+    }
+    Ok(())
+}
+
+fn has_role(env: &Env, role: &str, account: &Address) -> bool {
+    storage::has_role(env, &Symbol::new(env, role), account)
 }
 
 #[contract]
@@ -515,7 +530,7 @@ impl InvoiceToken {
         if meta.paused {
             return Err(Error::Paused);
         }
-        if by != meta.admin && by != meta.minter {
+        if !has_role(&env, ADMIN_ROLE, &by) && !has_role(&env, MINTER_ROLE, &by) {
             return Err(Error::Unauthorized);
         }
         ensure_account_not_frozen(&env, &by)?;
@@ -553,7 +568,7 @@ impl InvoiceToken {
         if meta.paused {
             return Err(Error::Paused);
         }
-        if by != meta.admin && by != meta.minter {
+        if !has_role(&env, ADMIN_ROLE, &by) && !has_role(&env, MINTER_ROLE, &by) {
             return Err(Error::Unauthorized);
         }
         ensure_account_not_frozen(&env, &by)?;
@@ -590,7 +605,7 @@ impl InvoiceToken {
         ensure_non_zero_address(&env, &caller)?;
         caller.require_auth();
         let mut meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
-        if caller != meta.admin && caller != meta.minter {
+        if !has_role(&env, ADMIN_ROLE, &caller) && !has_role(&env, TRANSFER_LOCKER_ROLE, &caller) {
             return Err(Error::Unauthorized);
         }
         let old_locked = meta.transfer_locked;
@@ -601,12 +616,9 @@ impl InvoiceToken {
     }
 
     /// Configure the optional lock-up contract consulted before holder transfers.
-    pub fn set_transfer_restriction(
-        env: Env,
-        restriction: Option<Address>,
-    ) -> Result<(), Error> {
+    pub fn set_transfer_restriction(env: Env, restriction: Option<Address>) -> Result<(), Error> {
         let mut meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
-        meta.admin.require_auth();
+        require_role_auth(&env, ADMIN_ROLE, &meta.admin)?;
         meta.transfer_restriction = restriction;
         storage::set_metadata(&env, &meta);
         Ok(())
@@ -617,7 +629,7 @@ impl InvoiceToken {
         ensure_non_zero_address(&env, &new_minter)?;
         let mut meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
         let old_minter = meta.minter.clone();
-        meta.admin.require_auth();
+        require_role_auth(&env, ADMIN_ROLE, &meta.admin)?;
         meta.minter = new_minter.clone();
         storage::set_metadata(&env, &meta);
 
@@ -633,7 +645,7 @@ impl InvoiceToken {
     /// Update the token name. Admin only.
     pub fn set_name(env: Env, new_name: SorobanString) -> Result<(), Error> {
         let mut meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
-        meta.admin.require_auth();
+        require_role_auth(&env, ADMIN_ROLE, &meta.admin)?;
         if new_name.is_empty() {
             return Err(Error::InvalidMetadata);
         }
@@ -645,7 +657,7 @@ impl InvoiceToken {
     /// Update the token symbol. Admin only.
     pub fn set_symbol(env: Env, new_symbol: SorobanString) -> Result<(), Error> {
         let mut meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
-        meta.admin.require_auth();
+        require_role_auth(&env, ADMIN_ROLE, &meta.admin)?;
         if new_symbol.is_empty() {
             return Err(Error::InvalidMetadata);
         }
@@ -657,7 +669,7 @@ impl InvoiceToken {
     /// Update the fractional precision for this invoice sub-asset. Admin only.
     pub fn set_decimals(env: Env, decimals: u32) -> Result<(), Error> {
         let mut meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
-        meta.admin.require_auth();
+        require_role_auth(&env, ADMIN_ROLE, &meta.admin)?;
         if decimals > MAX_DECIMALS {
             return Err(Error::InvalidDecimals);
         }
@@ -669,9 +681,10 @@ impl InvoiceToken {
     }
 
     /// Set emergency pause state. Admin only.
-    pub fn set_paused(env: Env, paused: bool) -> Result<(), Error> {
+    pub fn set_paused(env: Env, caller: Address, paused: bool) -> Result<(), Error> {
+        ensure_non_zero_address(&env, &caller)?;
+        require_role_auth(&env, PAUSER_ROLE, &caller)?;
         let mut meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
-        meta.admin.require_auth();
         let old_paused = meta.paused;
         meta.paused = paused;
         storage::set_metadata(&env, &meta);
@@ -703,7 +716,7 @@ impl InvoiceToken {
     pub fn freeze_account(env: Env, account: Address) -> Result<(), Error> {
         ensure_non_zero_address(&env, &account)?;
         let meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
-        meta.admin.require_auth();
+        require_role_auth(&env, ADMIN_ROLE, &meta.admin)?;
         if storage::is_account_frozen(&env, &account) {
             return Err(Error::AccountFrozen);
         }
@@ -716,7 +729,7 @@ impl InvoiceToken {
     pub fn unfreeze_account(env: Env, account: Address) -> Result<(), Error> {
         ensure_non_zero_address(&env, &account)?;
         let meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
-        meta.admin.require_auth();
+        require_role_auth(&env, ADMIN_ROLE, &meta.admin)?;
         if !storage::is_account_frozen(&env, &account) {
             return Err(Error::AccountNotFrozen);
         }
@@ -729,38 +742,34 @@ impl InvoiceToken {
     /// This function allows the admin to reclaim tokens from a frozen account
     /// for regulatory compliance purposes (e.g., court orders, sanctions, fraud).
     /// The clawback destination can be the admin or any other designated address.
-    pub fn clawback(
-        env: Env,
-        from: Address,
-        amount: i128,
-    ) -> Result<(), Error> {
+    pub fn clawback(env: Env, from: Address, amount: i128) -> Result<(), Error> {
         ensure_non_zero_address(&env, &from)?;
         let meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
-        meta.admin.require_auth();
-        
+        require_role_auth(&env, ADMIN_ROLE, &meta.admin)?;
+
         // SEP-41: Clawback can only be performed on frozen accounts
         if !storage::is_account_frozen(&env, &from) {
             return Err(Error::AccountNotFrozen);
         }
-        
+
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
-        
+
         let balance = storage::get_balance(&env, &from);
         if balance < amount {
             return Err(Error::InsufficientBalance);
         }
-        
+
         // Reduce the frozen account's balance
         storage::set_balance(&env, &from, balance - amount);
-        
+
         // Reduce total supply (tokens are effectively burned)
         let new_supply = storage::get_total_supply(&env)
             .checked_sub(amount)
             .ok_or(Error::Overflow)?;
         storage::set_total_supply(&env, new_supply);
-        
+
         // Emit event for regulatory audit trail
         events::clawback_event(&env, &from, amount);
         Ok(())
@@ -791,7 +800,7 @@ impl InvoiceToken {
         ensure_non_zero_address(&env, &caller)?;
         caller.require_auth();
         let meta = storage::get_metadata(&env).ok_or(Error::NotInit)?;
-        if caller != meta.admin {
+        if !has_role(&env, ADMIN_ROLE, &caller) {
             return Err(Error::Unauthorized);
         }
         if !(0..=10_000).contains(&new_bps) {

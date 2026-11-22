@@ -585,13 +585,13 @@ fn test_clawback_requires_admin_auth() {
     let env = Env::default();
     let (client, _admin, minter) = setup_token(&env);
     let account = Address::generate(&env);
-    
+
     // Mint some tokens and freeze account
     env.mock_all_auths();
     client.mint(&account, &100, &minter);
     client.freeze_account(&account);
     env.mock_all_auths_allowing_non_root_auth();
-    
+
     // Non-admin cannot clawback
     let stranger = Address::generate(&env);
     assert!(client.try_clawback(&account, &50).is_err());
@@ -603,9 +603,9 @@ fn test_clawback_only_works_on_frozen_accounts() {
     env.mock_all_auths();
     let (client, _admin, minter) = setup_token(&env);
     let account = Address::generate(&env);
-    
+
     client.mint(&account, &100, &minter);
-    
+
     // Cannot clawback from unfrozen account
     assert_eq!(
         client.try_clawback(&account, &50),
@@ -620,13 +620,13 @@ fn test_clawback_full_balance_from_frozen_account() {
     env.mock_all_auths();
     let (client, _admin, minter) = setup_token(&env);
     let account = Address::generate(&env);
-    
+
     client.mint(&account, &100, &minter);
     client.freeze_account(&account);
-    
+
     let supply_before = client.total_supply();
     client.clawback(&account, &100);
-    
+
     assert_eq!(client.balance(&account), 0);
     assert_eq!(client.total_supply(), supply_before - 100);
 }
@@ -637,16 +637,16 @@ fn test_clawback_partial_balance_from_frozen_account() {
     env.mock_all_auths();
     let (client, _admin, minter) = setup_token(&env);
     let account = Address::generate(&env);
-    
+
     client.mint(&account, &100, &minter);
     client.freeze_account(&account);
-    
+
     let supply_before = client.total_supply();
     client.clawback(&account, &60);
-    
+
     assert_eq!(client.balance(&account), 40);
     assert_eq!(client.total_supply(), supply_before - 60);
-    
+
     // Can clawback again
     client.clawback(&account, &40);
     assert_eq!(client.balance(&account), 0);
@@ -659,10 +659,10 @@ fn test_clawback_insufficient_balance_fails() {
     env.mock_all_auths();
     let (client, _admin, minter) = setup_token(&env);
     let account = Address::generate(&env);
-    
+
     client.mint(&account, &100, &minter);
     client.freeze_account(&account);
-    
+
     assert_eq!(
         client.try_clawback(&account, &150),
         Err(Ok(crate::errors::Error::InsufficientBalance))
@@ -676,10 +676,10 @@ fn test_clawback_zero_or_negative_amount_fails() {
     env.mock_all_auths();
     let (client, _admin, minter) = setup_token(&env);
     let account = Address::generate(&env);
-    
+
     client.mint(&account, &100, &minter);
     client.freeze_account(&account);
-    
+
     assert_eq!(
         client.try_clawback(&account, &0),
         Err(Ok(crate::errors::Error::InvalidAmount))
@@ -697,14 +697,14 @@ fn test_clawback_emits_event() {
     env.mock_all_auths();
     let (client, _admin, minter) = setup_token(&env);
     let account = Address::generate(&env);
-    
+
     client.mint(&account, &100, &minter);
     client.freeze_account(&account);
     client.clawback(&account, &60);
-    
+
     let clawback_event = env.events().all().events().last().unwrap().clone();
     let (_contract_addr, topics, data) = parse_event(&env, &clawback_event);
-    
+
     assert_eq!(
         topics,
         (Symbol::new(&env, "clawback"), account.clone()).into_val(&env)
@@ -720,19 +720,19 @@ fn test_clawback_multiple_frozen_accounts_independence() {
     let (client, _admin, minter) = setup_token(&env);
     let account1 = Address::generate(&env);
     let account2 = Address::generate(&env);
-    
+
     client.mint(&account1, &100, &minter);
     client.mint(&account2, &200, &minter);
     client.freeze_account(&account1);
     client.freeze_account(&account2);
-    
+
     let supply_before = client.total_supply();
-    
+
     client.clawback(&account1, &50);
     assert_eq!(client.balance(&account1), 50);
     assert_eq!(client.balance(&account2), 200);
     assert_eq!(client.total_supply(), supply_before - 50);
-    
+
     client.clawback(&account2, &100);
     assert_eq!(client.balance(&account1), 50);
     assert_eq!(client.balance(&account2), 100);
@@ -745,20 +745,20 @@ fn test_clawback_then_unfreeze_lifecycle() {
     env.mock_all_auths();
     let (client, admin, minter) = setup_token(&env);
     let account = Address::generate(&env);
-    
+
     client.mint(&account, &100, &minter);
     client.freeze_account(&account);
     client.clawback(&account, &60);
-    
+
     assert_eq!(client.balance(&account), 40);
-    
+
     // Unfreeze and verify account can transact again
     client.unfreeze_account(&account);
     client.set_transfer_locked(&admin, &false);
-    
+
     let recipient = Address::generate(&env);
     client.transfer(&account, &recipient, &20);
-    
+
     assert_eq!(client.balance(&account), 20);
     assert_eq!(client.balance(&recipient), 20);
 }
@@ -768,21 +768,21 @@ fn test_clawback_conserves_supply_invariant() {
     let env = Env::default();
     env.mock_all_auths();
     let (client, _admin, minter) = setup_token(&env);
-    
+
     let account1 = Address::generate(&env);
     let account2 = Address::generate(&env);
     let account3 = Address::generate(&env);
-    
+
     client.mint(&account1, &100, &minter);
     client.mint(&account2, &200, &minter);
     client.mint(&account3, &300, &minter);
-    
+
     let initial_supply = client.total_supply();
     assert_eq!(initial_supply, 600);
-    
+
     client.freeze_account(&account2);
     client.clawback(&account2, &150);
-    
+
     // Supply should decrease by clawback amount
     assert_eq!(client.total_supply(), initial_supply - 150);
     assert_eq!(
@@ -1828,7 +1828,7 @@ fn test_pause_blocks_burn_and_burn_from() {
     let expiration = env.ledger().sequence() + 100;
     client.mint(&admin, &100, &minter);
     client.approve(&admin, &spender, &100, &expiration);
-    client.set_paused(&true);
+    client.set_paused(&admin, &true);
 
     assert_eq!(
         client.try_burn(&admin, &10),
@@ -2558,7 +2558,7 @@ fn test_pause_unpause_state_switch_lifecycle() {
     assert_eq!(client.paused(), false);
 
     // 1. Pause contract
-    client.set_paused(&true);
+    client.set_paused(&admin, &true);
     assert_eq!(client.paused(), true);
 
     // Verify all operations fail with Error::Paused
@@ -2608,7 +2608,7 @@ fn test_pause_unpause_state_switch_lifecycle() {
     assert_eq!(client.allowance(&holder_a, &spender), 400);
 
     // 2. Unpause contract
-    client.set_paused(&false);
+    client.set_paused(&admin, &false);
     assert_eq!(client.paused(), false);
 
     // Verify operations succeed after unpausing
@@ -2656,13 +2656,13 @@ fn test_pause_unpause_repeated_toggles_state_persistence() {
 
     for _ in 0..3 {
         // Toggle on
-        client.set_paused(&true);
+        client.set_paused(&admin, &true);
         assert_eq!(client.paused(), true);
         assert_eq!(client.balance(&holder), 500);
         assert_eq!(client.total_supply(), 500);
 
         // Toggle off
-        client.set_paused(&false);
+        client.set_paused(&admin, &false);
         assert_eq!(client.paused(), false);
         assert_eq!(client.balance(&holder), 500);
         assert_eq!(client.total_supply(), 500);
@@ -2676,7 +2676,7 @@ fn test_set_paused_non_admin_unauthorized() {
     let (client, _admin, _minter) = setup_token(&env);
 
     // Call without admin mock auth should fail
-    let result = client.try_set_paused(&true);
+    let result = client.try_set_paused(&_admin, &true);
     assert!(result.is_err());
 }
 
@@ -2690,19 +2690,19 @@ fn test_set_paused_idempotent_switch() {
     assert_eq!(client.paused(), false);
 
     // Unpause when already unpaused
-    client.set_paused(&false);
+    client.set_paused(&_admin, &false);
     assert_eq!(client.paused(), false);
 
     // Pause
-    client.set_paused(&true);
+    client.set_paused(&_admin, &true);
     assert_eq!(client.paused(), true);
 
     // Pause again when already paused
-    client.set_paused(&true);
+    client.set_paused(&_admin, &true);
     assert_eq!(client.paused(), true);
 
     // Unpause
-    client.set_paused(&false);
+    client.set_paused(&_admin, &false);
     assert_eq!(client.paused(), false);
 }
 
@@ -2714,7 +2714,7 @@ fn test_pause_unpause_event_emission() {
     let (client, _admin, _minter) = setup_token(&env);
 
     // 1. Pause
-    client.set_paused(&true);
+    client.set_paused(&_admin, &true);
     let events = env.events().all();
     let event = events.events().last().unwrap();
     let (_contract_addr, topics, data) = parse_event(&env, event);
@@ -2727,7 +2727,7 @@ fn test_pause_unpause_event_emission() {
     assert_eq!(new_val, true);
 
     // 2. Unpause
-    client.set_paused(&false);
+    client.set_paused(&_admin, &false);
     let events = env.events().all();
     let event = events.events().last().unwrap();
     let (_contract_addr, topics, data) = parse_event(&env, event);
@@ -2966,7 +2966,7 @@ fn test_mint_paused_rejected() {
     env.mock_all_auths();
     let (client, admin, minter) = setup_token(&env);
 
-    client.set_paused(&true);
+    client.set_paused(&admin, &true);
     let recipient = Address::generate(&env);
     let result = client.try_mint(&recipient, &100, &minter);
     assert_eq!(result, Err(Ok(crate::errors::Error::Paused)));
@@ -3009,7 +3009,7 @@ fn test_mint_batch_paused_rejected() {
     env.mock_all_auths();
     let (client, admin, minter) = setup_token(&env);
 
-    client.set_paused(&true);
+    client.set_paused(&admin, &true);
     let recipients = soroban_sdk::vec![&env, Address::generate(&env)];
     let amounts = soroban_sdk::vec![&env, 100i128];
 
@@ -3169,7 +3169,9 @@ fn test_storage_key_ttl_after_multiple_operations() {
 
 /// Small deterministic LCG so failures are reproducible (no rand dep).
 fn lcg_next(state: &mut u64) -> u64 {
-    *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    *state = state
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
     *state >> 33
 }
 
@@ -3200,7 +3202,11 @@ fn issue457_mint_split_conserves_total_supply() {
     let mut remaining: i128 = 1_000_007;
     let mut minted: i128 = 0;
     for i in 0..6 {
-        let part = if i == 5 { remaining } else { lcg_amount(&mut state, remaining / 3).min(remaining - (5 - i as i128)) };
+        let part = if i == 5 {
+            remaining
+        } else {
+            lcg_amount(&mut state, remaining / 3).min(remaining - (5 - i as i128))
+        };
         client.mint(&wallets.get(i).unwrap(), &part, &minter);
         minted += part;
         remaining -= part;
@@ -3272,9 +3278,7 @@ fn issue457_transfers_with_fee_conserve_supply() {
         client.set_fee_bps(&admin, &fee_bps);
         let amt = lcg_amount(&mut state, supply / 20);
         client.transfer(&alice, &bob, &amt);
-        let total = client.balance(&alice)
-            + client.balance(&bob)
-            + client.balance(&admin);
+        let total = client.balance(&alice) + client.balance(&bob) + client.balance(&admin);
         assert_eq!(total, supply, "conservation broke at fee_bps={}", fee_bps);
         assert_eq!(client.total_supply(), supply);
     }

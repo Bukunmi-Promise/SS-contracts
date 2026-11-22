@@ -314,7 +314,7 @@ fn burn_from_on_settlement_rejects_an_expired_allowance() {
 #[test]
 fn burn_on_settlement_rejects_when_paused() {
     let h = Harness::new(1_000);
-    h.token.set_paused(&true);
+    h.token.set_paused(&h.admin, &true);
 
     let result = h
         .escrow_client()
@@ -326,7 +326,7 @@ fn burn_on_settlement_rejects_when_paused() {
 fn burn_from_on_settlement_rejects_when_paused() {
     let h = Harness::new(1_000);
     h.token.approve(&h.investor, &h.escrow_id, &1_000, &1_000);
-    h.token.set_paused(&true);
+    h.token.set_paused(&h.admin, &true);
 
     let result = h
         .escrow_client()
